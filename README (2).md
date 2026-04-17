@@ -53,24 +53,24 @@ Each service is independently deployable, loosely coupled, and managed entirely 
                     └─────────────────┬───────────────────────────┘
                                       │ Simulated API Calls
           ┌───────────────────────────┼────────────────────────────────┐
-          │                 Lambda-Style Microservices                  │
-          │                                                             │
-          │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐     │
+          │                 Lambda-Style Microservices                 │
+          │                                                            │
+          │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐      │
           │  │product_service│  │search_service│  │  cart_service│     │
-          │  │  Catalog &   │  │  Filter &    │  │  Add/Remove/ │     │
-          │  │  Inventory   │  │  Discovery   │  │  Update Cart │     │
-          │  └──────────────┘  └──────────────┘  └──────────────┘     │
-          │                                                             │
-          │  ┌──────────────┐  ┌──────────────────────────────────┐   │
+          │  │  Catalog &   │  │  Filter &    │  │  Add/Remove/ │      │
+          │  │  Inventory   │  │  Discovery   │  │  Update Cart │      │
+          │  └──────────────┘  └──────────────┘  └──────────────|      │
+          │                                                            │
+          │  ┌──────────────┐  ┌──────────────────────────────────┐    │
           │  │order_service │  │        payment_service            │   │
           │  │  Process &   │  │   Stripe Integration (simulated)  │   │
           │  │  Track Orders│  │   Checkout Workflow               │   │
-          │  └──────────────┘  └──────────────────────────────────┘   │
+          │  └──────────────┘  └──────────────────────────────────┘    │
           └─────────────────────────────────────────────────────────────┘
                                       │
                     ┌─────────────────▼───────────────────────────┐
-                    │           Terraform-Managed Infrastructure   │
-                    │  main.tf · cors.tf · payment.tf · iam.tf     │
+                    │           Terraform-Managed Infrastructure  │
+                    │  main.tf · cors.tf · payment.tf · iam.tf    │
                     └─────────────────────────────────────────────┘
 ```
 
@@ -257,7 +257,7 @@ All infrastructure is **fully managed via Terraform**:
 The project uses **AWS S3** for two key purposes:
 
 - 🖼️ **Product Images** — All Ferrari merchandise product images are stored in an S3 bucket and served to the frontend, enabling easy image management and scalable media delivery
-- 🌐 **Frontend Hosting** — The static frontend (HTML, CSS, JS) is uploaded and hosted via S3, then distributed globally through **AWS CloudFront** for fast, low-latency access
+- 🌐 Frontend Hosting — The frontend (React application) is bundled and served via a Node.js server, which handles deployment and serves the client-side build to users.
 
 ```
 S3 Bucket
@@ -334,10 +334,8 @@ npm install
 ## 🔮 Future Improvements
 
 - 🔐 Real authentication system (JWT / OAuth2)
-- 🗄️ Database integration (DynamoDB / MongoDB)
-- 💳 Live Stripe payment gateway integration
 - 📊 Admin dashboard for product and order management
-- 📍 Real-time order tracking system
+- Cloudwatch 
 - 🛡️ API Gateway with rate limiting and authorization
 
 ---
