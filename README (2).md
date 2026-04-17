@@ -181,12 +181,12 @@ ferrari-merchandise-platform/
 
 ## 🧰 Tech Stack
 
-### Frontend
-| Technology | Purpose |
-|-----------|---------|
-| HTML5 | Semantic structure |
-| CSS3 | Ferrari-themed styling and layouts |
-| Vanilla JavaScript | Dynamic UI interactions and API calls |
+| Technology                   | Purpose                                                  |
+| ---------------------------- | -------------------------------------------------------- |
+| React                        | Component-based UI development                           |
+| Node.js (build/runtime)      | Running and serving the frontend application             |
+| JavaScript (ES6+)            | Application logic, state management, and API integration |
+
 
 ### Backend
 | Technology | Purpose |
