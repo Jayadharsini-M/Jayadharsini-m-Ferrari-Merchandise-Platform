@@ -290,9 +290,9 @@ Every Lambda service has **independent unit tests**, ensuring each microservice 
 
 ### Prerequisites
 
-- Python 3.x
+- Python 3.11
 - Node.js (for frontend)
-- Terraform 1.x+
+- Terraform 
 - AWS CLI configured
 
 ### 1. Clone the repository
