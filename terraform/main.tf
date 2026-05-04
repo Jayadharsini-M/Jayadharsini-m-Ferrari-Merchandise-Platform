@@ -180,7 +180,7 @@ resource "aws_lambda_function" "product_service" {
   runtime          = "python3.11"
   timeout          = 30
   memory_size      = 128
-  publish          = true   # ✅ enables Lambda versioning
+  publish          = true # ✅ enables Lambda versioning
 
   environment {
     variables = {
@@ -194,9 +194,9 @@ resource "aws_lambda_function" "product_service" {
 }
 
 resource "aws_lambda_alias" "product_service_alias" {
-  name             = var.api_version                                         # e.g. "v1"
+  name             = var.api_version # e.g. "v1"
   function_name    = aws_lambda_function.product_service.function_name
-  function_version = aws_lambda_function.product_service.version            # points to latest published
+  function_version = aws_lambda_function.product_service.version # points to latest published
 }
 
 # ---- Cart Service ----
@@ -209,7 +209,7 @@ resource "aws_lambda_function" "cart_service" {
   runtime          = "python3.11"
   timeout          = 30
   memory_size      = 128
-  publish          = true   # ✅
+  publish          = true # ✅
 
   environment {
     variables = {
@@ -239,7 +239,7 @@ resource "aws_lambda_function" "order_service" {
   runtime          = "python3.11"
   timeout          = 30
   memory_size      = 128
-  publish          = true   # ✅
+  publish          = true # ✅
 
   environment {
     variables = {
@@ -270,7 +270,7 @@ resource "aws_lambda_function" "search_service" {
   runtime          = "python3.11"
   timeout          = 30
   memory_size      = 128
-  publish          = true   # ✅
+  publish          = true # ✅
 
   environment {
     variables = {
@@ -298,7 +298,7 @@ resource "aws_lambda_permission" "product_service" {
   statement_id  = "AllowAPIGatewayInvoke"
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.product_service.function_name
-  qualifier     = aws_lambda_alias.product_service_alias.name   # ✅ scoped to alias
+  qualifier     = aws_lambda_alias.product_service_alias.name # ✅ scoped to alias
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_apigatewayv2_api.ferrari_api.execution_arn}/*"
 }
@@ -338,28 +338,28 @@ resource "aws_lambda_permission" "search_service" {
 resource "aws_apigatewayv2_integration" "product_service" {
   api_id                 = aws_apigatewayv2_api.ferrari_api.id
   integration_type       = "AWS_PROXY"
-  integration_uri        = aws_lambda_alias.product_service_alias.invoke_arn  # ✅ alias
+  integration_uri        = aws_lambda_alias.product_service_alias.invoke_arn # ✅ alias
   payload_format_version = "2.0"
 }
 
 resource "aws_apigatewayv2_integration" "cart_service" {
   api_id                 = aws_apigatewayv2_api.ferrari_api.id
   integration_type       = "AWS_PROXY"
-  integration_uri        = aws_lambda_alias.cart_service_alias.invoke_arn      # ✅ alias
+  integration_uri        = aws_lambda_alias.cart_service_alias.invoke_arn # ✅ alias
   payload_format_version = "2.0"
 }
 
 resource "aws_apigatewayv2_integration" "order_service" {
   api_id                 = aws_apigatewayv2_api.ferrari_api.id
   integration_type       = "AWS_PROXY"
-  integration_uri        = aws_lambda_alias.order_service_alias.invoke_arn     # ✅ alias
+  integration_uri        = aws_lambda_alias.order_service_alias.invoke_arn # ✅ alias
   payload_format_version = "2.0"
 }
 
 resource "aws_apigatewayv2_integration" "search_service" {
   api_id                 = aws_apigatewayv2_api.ferrari_api.id
   integration_type       = "AWS_PROXY"
-  integration_uri        = aws_lambda_alias.search_service_alias.invoke_arn    # ✅ alias
+  integration_uri        = aws_lambda_alias.search_service_alias.invoke_arn # ✅ alias
   payload_format_version = "2.0"
 }
 

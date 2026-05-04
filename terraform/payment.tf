@@ -12,16 +12,16 @@ resource "aws_lambda_function" "payment_service" {
   runtime          = "python3.11"
   timeout          = 30
   memory_size      = 128
-  publish          = true   # ✅ enable versioning like other services
+  publish          = true # ✅ enable versioning like other services
 
   environment {
     variables = {
-      ORDERS_TABLE        = var.orders_table_name
-      PRODUCTS_TABLE      = var.products_table_name
-      CART_TABLE          = var.carts_table_name
-      STRIPE_SECRET_KEY   = var.stripe_secret_key
-      ENVIRONMENT         = var.environment
-      API_VERSION         = var.api_version   # ✅ added for consistency
+      ORDERS_TABLE      = var.orders_table_name
+      PRODUCTS_TABLE    = var.products_table_name
+      CART_TABLE        = var.carts_table_name
+      STRIPE_SECRET_KEY = var.stripe_secret_key
+      ENVIRONMENT       = var.environment
+      API_VERSION       = var.api_version # ✅ added for consistency
     }
   }
 
@@ -30,7 +30,7 @@ resource "aws_lambda_function" "payment_service" {
 
 # ── Lambda Alias (for /v1 versioning) ──────────────────────────
 resource "aws_lambda_alias" "payment_service_alias" {
-  name             = var.api_version              # e.g. "v1"
+  name             = var.api_version # e.g. "v1"
   function_name    = aws_lambda_function.payment_service.function_name
   function_version = aws_lambda_function.payment_service.version
 }
@@ -40,7 +40,7 @@ resource "aws_lambda_permission" "payment_service" {
   statement_id  = "AllowAPIGatewayInvokePayment"
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.payment_service.function_name
-  qualifier     = aws_lambda_alias.payment_service_alias.name   # ✅ alias
+  qualifier     = aws_lambda_alias.payment_service_alias.name # ✅ alias
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_apigatewayv2_api.ferrari_api.execution_arn}/*"
 }
@@ -49,7 +49,7 @@ resource "aws_lambda_permission" "payment_service" {
 resource "aws_apigatewayv2_integration" "payment_service" {
   api_id                 = aws_apigatewayv2_api.ferrari_api.id
   integration_type       = "AWS_PROXY"
-  integration_uri        = aws_lambda_alias.payment_service_alias.invoke_arn  # ✅ alias
+  integration_uri        = aws_lambda_alias.payment_service_alias.invoke_arn # ✅ alias
   payload_format_version = "2.0"
 }
 
