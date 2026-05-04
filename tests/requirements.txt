@@ -1,0 +1,5 @@
+boto3
+moto
+pytest
+pytest-cov
+stripe==15.0.1

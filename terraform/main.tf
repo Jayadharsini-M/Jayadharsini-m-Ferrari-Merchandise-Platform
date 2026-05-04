@@ -7,6 +7,8 @@
 #   - PAY_PER_REQUEST for DynamoDB
 #   - Environment variables for all Lambda config
 #   - CORS configured for CloudFront origin
+#   - API versioning via /v1 route prefix
+#   - Lambda publish=true for version tracking
 # ================================================================
 
 terraform {
@@ -25,7 +27,6 @@ provider "aws" {
 
 # ================================================================
 # LOCALS
-# ✅ Best Practice: Common tags on all resources
 # ================================================================
 
 locals {
@@ -38,8 +39,6 @@ locals {
 
 # ================================================================
 # DYNAMODB TABLES
-# ✅ Best Practice: PAY_PER_REQUEST — no capacity planning needed
-# ✅ Best Practice: Environment prefix on table names
 # ================================================================
 
 resource "aws_dynamodb_table" "products" {
@@ -123,19 +122,16 @@ resource "aws_iam_role" "lambda_role" {
   tags = local.common_tags
 }
 
-# Basic Lambda execution (CloudWatch logs)
 resource "aws_iam_role_policy_attachment" "lambda_basic" {
   role       = aws_iam_role.lambda_role.name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
 }
 
-# DynamoDB full access
 resource "aws_iam_role_policy_attachment" "lambda_dynamodb" {
   role       = aws_iam_role.lambda_role.name
   policy_arn = "arn:aws:iam::aws:policy/AmazonDynamoDBFullAccess"
 }
 
-# S3 full access (for product images)
 resource "aws_iam_role_policy_attachment" "lambda_s3" {
   role       = aws_iam_role.lambda_role.name
   policy_arn = "arn:aws:iam::aws:policy/AmazonS3FullAccess"
@@ -143,9 +139,6 @@ resource "aws_iam_role_policy_attachment" "lambda_s3" {
 
 # ================================================================
 # API GATEWAY
-# ✅ CORS configured to allow CloudFront origin
-# Created BEFORE Lambdas so its URL is available
-# as an environment variable for cart and order services
 # ================================================================
 
 resource "aws_apigatewayv2_api" "ferrari_api" {
@@ -154,23 +147,27 @@ resource "aws_apigatewayv2_api" "ferrari_api" {
   tags          = local.common_tags
 
   cors_configuration {
-  allow_origins = ["*"]
-  allow_methods = ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
-  allow_headers = ["Content-Type", "Authorization", "X-Requested-With"]
-  max_age       = 300
-}
+    allow_origins = ["*"]
+    allow_methods = ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+    allow_headers = ["Content-Type", "Authorization", "X-Requested-With"]
+    max_age       = 300
+  }
 }
 
 resource "aws_apigatewayv2_stage" "default" {
   api_id      = aws_apigatewayv2_api.ferrari_api.id
   name        = "$default"
   auto_deploy = true
+
+  # ✅ Stage variable so you can inspect current version in AWS Console
+  stage_variables = {
+    apiVersion = var.api_version
+  }
 }
 
 # ================================================================
 # LAMBDA FUNCTIONS
-# ✅ Best Practice: All config via environment variables
-# ✅ Best Practice: No hardcoded table names or URLs
+# ✅ publish = true  → AWS creates a numbered version on every deploy
 # ================================================================
 
 # ---- Product Service ----
@@ -183,15 +180,23 @@ resource "aws_lambda_function" "product_service" {
   runtime          = "python3.11"
   timeout          = 30
   memory_size      = 128
+  publish          = true   # ✅ enables Lambda versioning
 
   environment {
     variables = {
       PRODUCTS_TABLE = var.products_table_name
       ENVIRONMENT    = var.environment
+      API_VERSION    = var.api_version
     }
   }
 
   tags = local.common_tags
+}
+
+resource "aws_lambda_alias" "product_service_alias" {
+  name             = var.api_version                                         # e.g. "v1"
+  function_name    = aws_lambda_function.product_service.function_name
+  function_version = aws_lambda_function.product_service.version            # points to latest published
 }
 
 # ---- Cart Service ----
@@ -204,16 +209,24 @@ resource "aws_lambda_function" "cart_service" {
   runtime          = "python3.11"
   timeout          = 30
   memory_size      = 128
+  publish          = true   # ✅
 
   environment {
     variables = {
       CART_TABLE          = var.carts_table_name
-      PRODUCT_SERVICE_URL = aws_apigatewayv2_api.ferrari_api.api_endpoint
+      PRODUCT_SERVICE_URL = "${aws_apigatewayv2_api.ferrari_api.api_endpoint}/${var.api_version}"
       ENVIRONMENT         = var.environment
+      API_VERSION         = var.api_version
     }
   }
 
   tags = local.common_tags
+}
+
+resource "aws_lambda_alias" "cart_service_alias" {
+  name             = var.api_version
+  function_name    = aws_lambda_function.cart_service.function_name
+  function_version = aws_lambda_function.cart_service.version
 }
 
 # ---- Order Service ----
@@ -226,6 +239,7 @@ resource "aws_lambda_function" "order_service" {
   runtime          = "python3.11"
   timeout          = 30
   memory_size      = 128
+  publish          = true   # ✅
 
   environment {
     variables = {
@@ -233,10 +247,17 @@ resource "aws_lambda_function" "order_service" {
       CART_TABLE     = var.carts_table_name
       ORDERS_TABLE   = var.orders_table_name
       ENVIRONMENT    = var.environment
+      API_VERSION    = var.api_version
     }
   }
 
   tags = local.common_tags
+}
+
+resource "aws_lambda_alias" "order_service_alias" {
+  name             = var.api_version
+  function_name    = aws_lambda_function.order_service.function_name
+  function_version = aws_lambda_function.order_service.version
 }
 
 # ---- Search Service ----
@@ -249,26 +270,35 @@ resource "aws_lambda_function" "search_service" {
   runtime          = "python3.11"
   timeout          = 30
   memory_size      = 128
+  publish          = true   # ✅
 
   environment {
     variables = {
       PRODUCTS_TABLE = var.products_table_name
       ENVIRONMENT    = var.environment
+      API_VERSION    = var.api_version
     }
   }
 
   tags = local.common_tags
 }
 
+resource "aws_lambda_alias" "search_service_alias" {
+  name             = var.api_version
+  function_name    = aws_lambda_function.search_service.function_name
+  function_version = aws_lambda_function.search_service.version
+}
+
 # ================================================================
 # LAMBDA PERMISSIONS
-# Allow API Gateway to invoke each Lambda
+# ✅ source_arn uses wildcard so all /v1/... routes are allowed
 # ================================================================
 
 resource "aws_lambda_permission" "product_service" {
   statement_id  = "AllowAPIGatewayInvoke"
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.product_service.function_name
+  qualifier     = aws_lambda_alias.product_service_alias.name   # ✅ scoped to alias
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_apigatewayv2_api.ferrari_api.execution_arn}/*"
 }
@@ -277,6 +307,7 @@ resource "aws_lambda_permission" "cart_service" {
   statement_id  = "AllowAPIGatewayInvoke"
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.cart_service.function_name
+  qualifier     = aws_lambda_alias.cart_service_alias.name
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_apigatewayv2_api.ferrari_api.execution_arn}/*"
 }
@@ -285,6 +316,7 @@ resource "aws_lambda_permission" "order_service" {
   statement_id  = "AllowAPIGatewayInvoke"
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.order_service.function_name
+  qualifier     = aws_lambda_alias.order_service_alias.name
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_apigatewayv2_api.ferrari_api.execution_arn}/*"
 }
@@ -293,141 +325,139 @@ resource "aws_lambda_permission" "search_service" {
   statement_id  = "AllowAPIGatewayInvoke"
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.search_service.function_name
+  qualifier     = aws_lambda_alias.search_service_alias.name
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_apigatewayv2_api.ferrari_api.execution_arn}/*"
 }
 
-
-
 # ================================================================
 # API GATEWAY INTEGRATIONS
+# ✅ integration_uri now points to the Lambda ALIAS (via :v1 qualifier)
 # ================================================================
 
 resource "aws_apigatewayv2_integration" "product_service" {
   api_id                 = aws_apigatewayv2_api.ferrari_api.id
   integration_type       = "AWS_PROXY"
-  integration_uri        = aws_lambda_function.product_service.invoke_arn
+  integration_uri        = aws_lambda_alias.product_service_alias.invoke_arn  # ✅ alias
   payload_format_version = "2.0"
 }
 
 resource "aws_apigatewayv2_integration" "cart_service" {
   api_id                 = aws_apigatewayv2_api.ferrari_api.id
   integration_type       = "AWS_PROXY"
-  integration_uri        = aws_lambda_function.cart_service.invoke_arn
+  integration_uri        = aws_lambda_alias.cart_service_alias.invoke_arn      # ✅ alias
   payload_format_version = "2.0"
 }
 
 resource "aws_apigatewayv2_integration" "order_service" {
   api_id                 = aws_apigatewayv2_api.ferrari_api.id
   integration_type       = "AWS_PROXY"
-  integration_uri        = aws_lambda_function.order_service.invoke_arn
+  integration_uri        = aws_lambda_alias.order_service_alias.invoke_arn     # ✅ alias
   payload_format_version = "2.0"
 }
 
 resource "aws_apigatewayv2_integration" "search_service" {
   api_id                 = aws_apigatewayv2_api.ferrari_api.id
   integration_type       = "AWS_PROXY"
-  integration_uri        = aws_lambda_function.search_service.invoke_arn
+  integration_uri        = aws_lambda_alias.search_service_alias.invoke_arn    # ✅ alias
   payload_format_version = "2.0"
 }
 
-
-
 # ================================================================
 # API GATEWAY ROUTES
+# ✅ All routes now prefixed with /${var.api_version}  →  /v1/...
 # ================================================================
 
 # ---- Product Routes ----
 resource "aws_apigatewayv2_route" "get_home" {
   api_id    = aws_apigatewayv2_api.ferrari_api.id
-  route_key = "GET /"
+  route_key = "GET /${var.api_version}"
   target    = "integrations/${aws_apigatewayv2_integration.product_service.id}"
 }
 
 resource "aws_apigatewayv2_route" "get_products" {
   api_id    = aws_apigatewayv2_api.ferrari_api.id
-  route_key = "GET /products"
+  route_key = "GET /${var.api_version}/products"
   target    = "integrations/${aws_apigatewayv2_integration.product_service.id}"
 }
 
 resource "aws_apigatewayv2_route" "post_products" {
   api_id    = aws_apigatewayv2_api.ferrari_api.id
-  route_key = "POST /products"
+  route_key = "POST /${var.api_version}/products"
   target    = "integrations/${aws_apigatewayv2_integration.product_service.id}"
 }
 
 resource "aws_apigatewayv2_route" "get_product" {
   api_id    = aws_apigatewayv2_api.ferrari_api.id
-  route_key = "GET /products/{product_id}"
+  route_key = "GET /${var.api_version}/products/{product_id}"
   target    = "integrations/${aws_apigatewayv2_integration.product_service.id}"
 }
 
 resource "aws_apigatewayv2_route" "put_product" {
   api_id    = aws_apigatewayv2_api.ferrari_api.id
-  route_key = "PUT /products/{product_id}"
+  route_key = "PUT /${var.api_version}/products/{product_id}"
   target    = "integrations/${aws_apigatewayv2_integration.product_service.id}"
 }
 
 resource "aws_apigatewayv2_route" "delete_product" {
   api_id    = aws_apigatewayv2_api.ferrari_api.id
-  route_key = "DELETE /products/{product_id}"
+  route_key = "DELETE /${var.api_version}/products/{product_id}"
   target    = "integrations/${aws_apigatewayv2_integration.product_service.id}"
 }
 
 # ---- Cart Routes ----
 resource "aws_apigatewayv2_route" "post_cart" {
   api_id    = aws_apigatewayv2_api.ferrari_api.id
-  route_key = "POST /cart"
+  route_key = "POST /${var.api_version}/cart"
   target    = "integrations/${aws_apigatewayv2_integration.cart_service.id}"
 }
 
 resource "aws_apigatewayv2_route" "get_cart" {
   api_id    = aws_apigatewayv2_api.ferrari_api.id
-  route_key = "GET /cart/{user_id}"
+  route_key = "GET /${var.api_version}/cart/{user_id}"
   target    = "integrations/${aws_apigatewayv2_integration.cart_service.id}"
 }
 
 resource "aws_apigatewayv2_route" "delete_cart" {
   api_id    = aws_apigatewayv2_api.ferrari_api.id
-  route_key = "DELETE /cart/{user_id}"
+  route_key = "DELETE /${var.api_version}/cart/{user_id}"
   target    = "integrations/${aws_apigatewayv2_integration.cart_service.id}"
 }
 
 resource "aws_apigatewayv2_route" "delete_cart_item" {
   api_id    = aws_apigatewayv2_api.ferrari_api.id
-  route_key = "DELETE /cart/{user_id}/{product_id}"
+  route_key = "DELETE /${var.api_version}/cart/{user_id}/{product_id}"
   target    = "integrations/${aws_apigatewayv2_integration.cart_service.id}"
 }
 
 # ---- Order Routes ----
 resource "aws_apigatewayv2_route" "post_order" {
   api_id    = aws_apigatewayv2_api.ferrari_api.id
-  route_key = "POST /order"
+  route_key = "POST /${var.api_version}/order"
   target    = "integrations/${aws_apigatewayv2_integration.order_service.id}"
 }
 
 resource "aws_apigatewayv2_route" "post_cancel_order" {
   api_id    = aws_apigatewayv2_api.ferrari_api.id
-  route_key = "POST /cancel-order"
+  route_key = "POST /${var.api_version}/cancel-order"
   target    = "integrations/${aws_apigatewayv2_integration.order_service.id}"
 }
 
 resource "aws_apigatewayv2_route" "get_order" {
   api_id    = aws_apigatewayv2_api.ferrari_api.id
-  route_key = "GET /order/{order_id}"
+  route_key = "GET /${var.api_version}/order/{order_id}"
   target    = "integrations/${aws_apigatewayv2_integration.order_service.id}"
 }
 
 resource "aws_apigatewayv2_route" "get_user_orders" {
   api_id    = aws_apigatewayv2_api.ferrari_api.id
-  route_key = "GET /orders/{user_id}"
+  route_key = "GET /${var.api_version}/orders/{user_id}"
   target    = "integrations/${aws_apigatewayv2_integration.order_service.id}"
 }
 
 # ---- Search Routes ----
 resource "aws_apigatewayv2_route" "get_search" {
   api_id    = aws_apigatewayv2_api.ferrari_api.id
-  route_key = "GET /search"
+  route_key = "GET /${var.api_version}/search"
   target    = "integrations/${aws_apigatewayv2_integration.search_service.id}"
 }
-

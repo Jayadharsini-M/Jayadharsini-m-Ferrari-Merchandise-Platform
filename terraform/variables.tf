@@ -17,6 +17,16 @@ variable "environment" {
 }
 
 # ----------------------------------------------------------------
+# API Versioning
+# ✅ Bump this when you want to publish a new version
+# ----------------------------------------------------------------
+variable "api_version" {
+  description = "API version prefix used in all routes"
+  type        = string
+  default     = "v1"
+}
+
+# ----------------------------------------------------------------
 # DynamoDB Table Names
 # ✅ Best Practice: Prefixed with environment
 # ----------------------------------------------------------------
@@ -65,6 +75,7 @@ variable "search_service_name" {
   type        = string
   default     = "dev-ferrari-search-service"
 }
+
 variable "stripe_secret_key" {
   description = "Stripe secret key for payment processing"
   type        = string
@@ -75,5 +86,11 @@ variable "stripe_secret_key" {
 variable "frontend_build_path" {
   description = "Path to React build folder"
   type        = string
-default = "C:/Users/jayadharsini.m/ferrari-ecommerce/frontend/ferrari-frontend/build"
+  default     = "C:/Users/jayadharsini.m/ferrari-ecommerce/frontend/ferrari-frontend/build"
 }
+variable "log_retention_days" {
+  description = "Log retention in days"
+  type        = number
+  default     = 30
+}
+

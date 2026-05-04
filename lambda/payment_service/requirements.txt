@@ -1,0 +1,4 @@
+boto3
+moto
+pytest
+stripe==15.0.1

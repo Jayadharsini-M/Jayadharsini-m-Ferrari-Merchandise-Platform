@@ -1,14 +1,15 @@
 import json
 import boto3
+import uuid
 import os
-import urllib.request
 from decimal import Decimal
-from boto3.dynamodb.conditions import Key
+from shared.logger import get_logger
+
+logger = get_logger('product_service')
 
 dynamodb = boto3.resource("dynamodb")
-CART_TABLE = os.environ.get("CART_TABLE", "ecommerce-carts")
-PRODUCT_SERVICE_URL = os.environ.get("PRODUCT_SERVICE_URL", "")
-table = dynamodb.Table(CART_TABLE)
+TABLE_NAME = os.environ.get("PRODUCTS_TABLE", "ecommerce-products")
+table = dynamodb.Table(TABLE_NAME)
 
 
 def decimal_to_float(obj):
@@ -30,101 +31,173 @@ def response(status_code, body):
     }
 
 
-def fetch_product(product_id):
+def normalize_route(route):
+    if not route:
+        return route
+    parts = route.split(" ", 1)
+    if len(parts) != 2:
+        return route
+    method, path = parts
+    path_parts = path.split("/", 2)
+    if len(path_parts) > 2:
+        path = "/" + path_parts[2]
+    else:
+        path = "/"
+    return f"{method} {path}"
+
+
+# ─── EXISTING (unchanged) ────────────────────────────────────────────────
+
+def get_all_products():
+    logger.info("Fetching all products")
+    result = table.scan()
+    items = result.get("Items", [])
+    while "LastEvaluatedKey" in result:
+        result = table.scan(ExclusiveStartKey=result["LastEvaluatedKey"])
+        items.extend(result.get("Items", []))
+    return response(200, {"products": items, "count": len(items)})
+
+
+def get_product(product_id):
+    logger.info("Fetching product", product_id=product_id)
+    result = table.get_item(Key={"product_id": product_id})
+    item = result.get("Item")
+    if not item:
+        return response(404, {"message": "Product not found"})
+    return response(200, item)
+
+
+# ─── NEW: Flash sale listing ─────────────────────────────────────────────
+
+def get_flash_products():
+    """Return only products where is_flash_sale=true and stock > 0"""
+    logger.info("Fetching flash sale products")
+    from boto3.dynamodb.conditions import Attr
+
+    result = table.scan(
+        FilterExpression=Attr("is_flash_sale").eq(True) & Attr("stock").gt(0)
+    )
+    items = result.get("Items", [])
+    while "LastEvaluatedKey" in result:
+        result = table.scan(
+            ExclusiveStartKey=result["LastEvaluatedKey"],
+            FilterExpression=Attr("is_flash_sale").eq(True) & Attr("stock").gt(0)
+        )
+        items.extend(result.get("Items", []))
+
+    logger.info("Flash products fetched", count=len(items))
+    return response(200, {"products": items, "count": len(items)})
+
+
+# ─── NEW: Atomic stock decrement (oversell-safe) ─────────────────────────
+
+def decrement_stock(product_id, quantity=1):
+    """
+    Atomically decrement stock using a ConditionExpression.
+    Fails safely if stock < quantity — no overselling possible.
+    """
+    logger.info("Decrementing stock", product_id=product_id, quantity=quantity)
     try:
-        url = f"{PRODUCT_SERVICE_URL}/products/{product_id}"
-        req = urllib.request.Request(url)
-        with urllib.request.urlopen(req, timeout=5) as res:
-            if res.status == 200:
-                return json.loads(res.read().decode())
-            return None
+        table.update_item(
+            Key={"product_id": product_id},
+            UpdateExpression="SET stock = stock - :qty",
+            ConditionExpression="stock >= :qty AND is_flash_sale = :true",
+            ExpressionAttributeValues={
+                ":qty": int(quantity),
+                ":true": True
+            }
+        )
+        logger.info("Stock decremented", product_id=product_id)
+        return response(200, {"message": "Stock updated", "product_id": product_id})
+
+    except dynamodb.meta.client.exceptions.ConditionalCheckFailedException:
+        logger.warning("Stock insufficient or not flash sale", product_id=product_id)
+        return response(409, {"message": "Insufficient stock or product not available"})
+
     except Exception as e:
-        print(f"Error fetching product: {e}")
-        return None
+        logger.error("Stock decrement failed", error=str(e))
+        return response(500, {"message": "Failed to update stock"})
 
 
-def add_to_cart(body):
-    required = ["user_id", "product_id", "quantity"]
+# ─── MODIFIED: create_product — adds flash sale fields ───────────────────
+
+def create_product(body):
+    logger.info("Creating product", product_name=body.get("name"))
+
+    required = ["name", "description", "price", "stock", "image_url"]
     for field in required:
         if field not in body:
             return response(400, {"message": f"Missing field: {field}"})
-    user_id = body["user_id"]
-    product_id = body["product_id"]
-    quantity = int(body["quantity"])
-    product = fetch_product(product_id)
-    if not product:
-        return response(404, {"message": "Product not found"})
-    available_stock = int(product.get("stock", 0))
-    if quantity > available_stock:
-        return response(400, {"message": f"Not enough stock. Available: {available_stock}"})
-    existing = table.get_item(
-        Key={"user_id": user_id, "product_id": product_id}
-    ).get("Item")
-    if existing:
-        new_qty = int(existing["quantity"]) + quantity
-        table.update_item(
-            Key={"user_id": user_id, "product_id": product_id},
-            UpdateExpression="SET quantity = :q",
-            ExpressionAttributeValues={":q": new_qty}
-        )
-        return response(200, {"message": "Quantity updated", "new_quantity": new_qty})
-    else:
-        table.put_item(Item={
-            "user_id": user_id,
-            "product_id": product_id,
-            "quantity": quantity,
-            "name": product.get("name", ""),
-            "price": Decimal(str(product.get("price", 0)))
-        })
-        return response(200, {"message": "Item added to cart"})
+
+    product_id = str(uuid.uuid4())
+
+    item = {
+        "product_id": product_id,
+        "name": body["name"],
+        "description": body["description"],
+        "price": Decimal(str(body["price"])),
+        "stock": int(body["stock"]),
+        "image_url": body["image_url"],
+        "category": body.get("category", ""),
+        # ── Flash sale fields (new) ──
+        "is_flash_sale": bool(body.get("is_flash_sale", False)),
+        "drop_end_time": body.get("drop_end_time", ""),   # ISO string e.g. "2025-12-31T23:59:00Z"
+        "flash_label": body.get("flash_label", "LIMITED DROP"),  # e.g. "SERIES 1 · 50 UNITS"
+    }
+
+    table.put_item(Item=item)
+    logger.info("Product created", product_id=product_id)
+    return response(201, {"message": "Product created", "product_id": product_id})
 
 
-def get_cart(user_id):
-    result = table.query(KeyConditionExpression=Key("user_id").eq(user_id))
-    items = result.get("Items", [])
-    enriched = []
-    for item in items:
-        price = float(item.get("price", 0))
-        qty = int(item.get("quantity", 1))
-        enriched.append({
-            "product_id": item["product_id"],
-            "name": item.get("name", ""),
-            "price": price,
-            "quantity": qty,
-            "total_price": round(price * qty, 2)
-        })
-    cart_total = round(sum(i["total_price"] for i in enriched), 2)
-    return response(200, {
-        "user_id": user_id,
-        "items": enriched,
-        "cart_total": cart_total,
-        "item_count": len(enriched)
-    })
+# ─── MODIFIED: update_product — adds flash sale fields ───────────────────
 
+def update_product(product_id, body):
+    logger.info("Updating product", product_id=product_id)
 
-def remove_item(user_id, product_id):
-    existing = table.get_item(
-        Key={"user_id": user_id, "product_id": product_id}
-    ).get("Item")
+    existing = table.get_item(Key={"product_id": product_id}).get("Item")
     if not existing:
-        return response(404, {"message": "Item not found in cart"})
-    table.delete_item(Key={"user_id": user_id, "product_id": product_id})
-    return response(200, {"message": "Item removed from cart"})
+        return response(404, {"message": "Product not found"})
+
+    # Added is_flash_sale, drop_end_time, flash_label to allowed fields
+    allowed = ["name", "description", "price", "stock", "image_url",
+               "category", "is_flash_sale", "drop_end_time", "flash_label"]
+    update_fields = {k: v for k, v in body.items() if k in allowed}
+
+    if not update_fields:
+        return response(400, {"message": "No valid fields to update"})
+
+    if "price" in update_fields:
+        update_fields["price"] = Decimal(str(update_fields["price"]))
+
+    update_expression = "SET " + ", ".join(f"#f_{k} = :{k}" for k in update_fields)
+    expression_names = {f"#f_{k}": k for k in update_fields}
+    expression_values = {f":{k}": v for k, v in update_fields.items()}
+
+    table.update_item(
+        Key={"product_id": product_id},
+        UpdateExpression=update_expression,
+        ExpressionAttributeNames=expression_names,
+        ExpressionAttributeValues=expression_values
+    )
+    logger.info("Product updated", product_id=product_id)
+    return response(200, {"message": "Product updated", "product_id": product_id})
 
 
-def clear_cart(user_id):
-    result = table.query(KeyConditionExpression=Key("user_id").eq(user_id))
-    items = result.get("Items", [])
-    if not items:
-        return response(200, {"message": "Cart is already empty"})
-    with table.batch_writer() as batch:
-        for item in items:
-            batch.delete_item(Key={"user_id": item["user_id"], "product_id": item["product_id"]})
-    return response(200, {"message": "Cart cleared", "items_removed": len(items)})
+def delete_product(product_id):
+    logger.info("Deleting product", product_id=product_id)
+    existing = table.get_item(Key={"product_id": product_id}).get("Item")
+    if not existing:
+        return response(404, {"message": "Product not found"})
+    table.delete_item(Key={"product_id": product_id})
+    return response(200, {"message": "Product deleted", "product_id": product_id})
 
+
+# ─── HANDLER ─────────────────────────────────────────────────────────────
 
 def lambda_handler(event, context):
-    print("Event:", json.dumps(event))
+    logger.info("Request received", route=event.get("routeKey"),
+                request_id=context.aws_request_id)
 
     try:
         method = event.get("requestContext", {}).get("http", {}).get("method", "")
@@ -143,9 +216,11 @@ def lambda_handler(event, context):
         }
 
     route = event.get("routeKey", "")
+    route = normalize_route(route)
+
     path_params = event.get("pathParameters") or {}
-    user_id = path_params.get("user_id", "")
     product_id = path_params.get("product_id", "")
+
     body = {}
     if event.get("body"):
         try:
@@ -153,15 +228,27 @@ def lambda_handler(event, context):
         except Exception:
             return response(400, {"message": "Invalid JSON body"})
 
-    if route == "GET /":
-        return response(200, {"message": "Cart Service 🛒", "status": "running"})
-    elif route == "POST /cart":
-        return add_to_cart(body)
-    elif route == "GET /cart/{user_id}":
-        return get_cart(user_id)
-    elif route == "DELETE /cart/{user_id}/{product_id}":
-        return remove_item(user_id, product_id)
-    elif route == "DELETE /cart/{user_id}":
-        return clear_cart(user_id)
-    else:
-        return response(404, {"message": f"Route not found: {route}"})
+    try:
+        if route == "GET /":
+            return response(200, {"message": "Product Service ✅", "status": "running"})
+        elif route == "GET /products":
+            return get_all_products()
+        elif route == "GET /products/flash":          # ← NEW
+            return get_flash_products()
+        elif route == "GET /products/{product_id}":
+            return get_product(product_id)
+        elif route == "POST /products":
+            return create_product(body)
+        elif route == "PUT /products/{product_id}":
+            return update_product(product_id, body)
+        elif route == "DELETE /products/{product_id}":
+            return delete_product(product_id)
+        elif route == "POST /products/{product_id}/decrement-stock":  # ← NEW
+            qty = body.get("quantity", 1)
+            return decrement_stock(product_id, qty)
+        else:
+            return response(404, {"message": f"Route not found: {route}"})
+
+    except Exception as e:
+        logger.error("Unhandled error", error=str(e), route=route)
+        return response(500, {"message": "Internal server error"})
