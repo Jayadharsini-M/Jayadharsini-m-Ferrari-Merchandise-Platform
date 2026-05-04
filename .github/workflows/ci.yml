@@ -1,0 +1,93 @@
+name: Ferrari Platform — CI Build Pipeline
+
+on:
+  push:
+    branches:
+      - main
+      - dev-pro
+      - develop
+  pull_request:
+    branches:
+      - main
+      - dev-pro
+
+jobs:
+
+  frontend-build:
+    name: "🖥️ Frontend — React Build"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/ferrari-frontend/package-lock.json
+      - name: Install dependencies
+        working-directory: frontend/ferrari-frontend
+        run: npm ci
+      - name: Build
+        working-directory: frontend/ferrari-frontend
+        run: npm run build
+        env:
+          CI: false
+      - uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/ferrari-frontend/build/
+          retention-days: 7
+
+  backend-tests:
+    name: "🐍 Backend — Python Tests"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ hashFiles('**/requirements*.txt') }}
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Run pytest
+        run: pytest tests/backend/ -v --tb=short
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pytest-results
+          path: .pytest_cache/
+          retention-days: 7
+
+  terraform-validate:
+    name: "🏗️ Terraform — Validate"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.7.0
+      - name: Init
+        working-directory: terraform
+        run: terraform init -backend=false
+      - name: Format check
+        working-directory: terraform
+        run: terraform fmt -check -recursive
+      - name: Validate
+        working-directory: terraform
+        run: terraform validate
+
+  build-summary:
+    name: "✅ CI Complete"
+    runs-on: ubuntu-latest
+    needs: [frontend-build, backend-tests, terraform-validate]
+    steps:
+      - run: |
+          echo "✅ Frontend built"
+          echo "✅ Backend tests passed"
+          echo "✅ Terraform validated"
+          echo "🚫 No deployment performed"
