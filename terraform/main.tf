@@ -36,7 +36,9 @@ locals {
     ManagedBy   = "terraform"
   }
 }
-
+# ================================================================
+# CLOUDWATCH LOG GROUP FOR API GATEWAY
+# ================================================================
 # ================================================================
 # DYNAMODB TABLES
 # ================================================================
@@ -159,9 +161,22 @@ resource "aws_apigatewayv2_stage" "default" {
   name        = "$default"
   auto_deploy = true
 
-  # ✅ Stage variable so you can inspect current version in AWS Console
   stage_variables = {
     apiVersion = var.api_version
+  }
+
+  access_log_settings {
+    destination_arn = aws_cloudwatch_log_group.api_gateway.arn
+     format = jsonencode({
+      requestId      = "$context.requestId"
+      ip             = "$context.identity.sourceIp"
+      requestTime    = "$context.requestTime"
+      httpMethod     = "$context.httpMethod"
+      routeKey       = "$context.routeKey"
+      status         = "$context.status"
+      protocol       = "$context.protocol"
+      responseLength = "$context.responseLength"
+    })
   }
 }
 
@@ -180,7 +195,7 @@ resource "aws_lambda_function" "product_service" {
   runtime          = "python3.11"
   timeout          = 30
   memory_size      = 128
-  publish          = true # ✅ enables Lambda versioning
+  publish          = true   # ✅ enables Lambda versioning
 
   environment {
     variables = {
@@ -194,9 +209,9 @@ resource "aws_lambda_function" "product_service" {
 }
 
 resource "aws_lambda_alias" "product_service_alias" {
-  name             = var.api_version # e.g. "v1"
+  name             = var.api_version                                         # e.g. "v1"
   function_name    = aws_lambda_function.product_service.function_name
-  function_version = aws_lambda_function.product_service.version # points to latest published
+  function_version = aws_lambda_function.product_service.version            # points to latest published
 }
 
 # ---- Cart Service ----
@@ -209,7 +224,7 @@ resource "aws_lambda_function" "cart_service" {
   runtime          = "python3.11"
   timeout          = 30
   memory_size      = 128
-  publish          = true # ✅
+  publish          = true   # ✅
 
   environment {
     variables = {
@@ -239,7 +254,7 @@ resource "aws_lambda_function" "order_service" {
   runtime          = "python3.11"
   timeout          = 30
   memory_size      = 128
-  publish          = true # ✅
+  publish          = true   # ✅
 
   environment {
     variables = {
@@ -270,7 +285,7 @@ resource "aws_lambda_function" "search_service" {
   runtime          = "python3.11"
   timeout          = 30
   memory_size      = 128
-  publish          = true # ✅
+  publish          = true   # ✅
 
   environment {
     variables = {
@@ -298,7 +313,7 @@ resource "aws_lambda_permission" "product_service" {
   statement_id  = "AllowAPIGatewayInvoke"
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.product_service.function_name
-  qualifier     = aws_lambda_alias.product_service_alias.name # ✅ scoped to alias
+  qualifier     = aws_lambda_alias.product_service_alias.name   # ✅ scoped to alias
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_apigatewayv2_api.ferrari_api.execution_arn}/*"
 }
@@ -338,28 +353,28 @@ resource "aws_lambda_permission" "search_service" {
 resource "aws_apigatewayv2_integration" "product_service" {
   api_id                 = aws_apigatewayv2_api.ferrari_api.id
   integration_type       = "AWS_PROXY"
-  integration_uri        = aws_lambda_alias.product_service_alias.invoke_arn # ✅ alias
+  integration_uri        = aws_lambda_alias.product_service_alias.invoke_arn  # ✅ alias
   payload_format_version = "2.0"
 }
 
 resource "aws_apigatewayv2_integration" "cart_service" {
   api_id                 = aws_apigatewayv2_api.ferrari_api.id
   integration_type       = "AWS_PROXY"
-  integration_uri        = aws_lambda_alias.cart_service_alias.invoke_arn # ✅ alias
+  integration_uri        = aws_lambda_alias.cart_service_alias.invoke_arn      # ✅ alias
   payload_format_version = "2.0"
 }
 
 resource "aws_apigatewayv2_integration" "order_service" {
   api_id                 = aws_apigatewayv2_api.ferrari_api.id
   integration_type       = "AWS_PROXY"
-  integration_uri        = aws_lambda_alias.order_service_alias.invoke_arn # ✅ alias
+  integration_uri        = aws_lambda_alias.order_service_alias.invoke_arn     # ✅ alias
   payload_format_version = "2.0"
 }
 
 resource "aws_apigatewayv2_integration" "search_service" {
   api_id                 = aws_apigatewayv2_api.ferrari_api.id
   integration_type       = "AWS_PROXY"
-  integration_uri        = aws_lambda_alias.search_service_alias.invoke_arn # ✅ alias
+  integration_uri        = aws_lambda_alias.search_service_alias.invoke_arn    # ✅ alias
   payload_format_version = "2.0"
 }
 
@@ -402,6 +417,11 @@ resource "aws_apigatewayv2_route" "put_product" {
 resource "aws_apigatewayv2_route" "delete_product" {
   api_id    = aws_apigatewayv2_api.ferrari_api.id
   route_key = "DELETE /${var.api_version}/products/{product_id}"
+  target    = "integrations/${aws_apigatewayv2_integration.product_service.id}"
+}
+resource "aws_apigatewayv2_route" "put_product_flash" {
+  api_id    = aws_apigatewayv2_api.ferrari_api.id
+  route_key = "PUT /${var.api_version}/products/{product_id}/flash"
   target    = "integrations/${aws_apigatewayv2_integration.product_service.id}"
 }
 
@@ -454,6 +474,7 @@ resource "aws_apigatewayv2_route" "get_user_orders" {
   route_key = "GET /${var.api_version}/orders/{user_id}"
   target    = "integrations/${aws_apigatewayv2_integration.order_service.id}"
 }
+
 
 # ---- Search Routes ----
 resource "aws_apigatewayv2_route" "get_search" {

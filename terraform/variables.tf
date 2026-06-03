@@ -18,7 +18,6 @@ variable "environment" {
 
 # ----------------------------------------------------------------
 # API Versioning
-# ✅ Bump this when you want to publish a new version
 # ----------------------------------------------------------------
 variable "api_version" {
   description = "API version prefix used in all routes"
@@ -28,7 +27,6 @@ variable "api_version" {
 
 # ----------------------------------------------------------------
 # DynamoDB Table Names
-# ✅ Best Practice: Prefixed with environment
 # ----------------------------------------------------------------
 variable "products_table_name" {
   description = "DynamoDB products table name"
@@ -50,7 +48,6 @@ variable "orders_table_name" {
 
 # ----------------------------------------------------------------
 # Lambda Function Names
-# ✅ Best Practice: Prefixed with environment
 # ----------------------------------------------------------------
 variable "product_service_name" {
   description = "Product Lambda function name"
@@ -88,9 +85,18 @@ variable "frontend_build_path" {
   type        = string
   default     = "C:/Users/jayadharsini.m/ferrari-ecommerce/frontend/ferrari-frontend/build"
 }
+
 variable "log_retention_days" {
-  description = "Log retention in days"
+  description = "CloudWatch log retention in days"
   type        = number
   default     = 30
 }
 
+# ----------------------------------------------------------------
+# CloudWatch Alarms
+# ----------------------------------------------------------------
+variable "alarm_email" {
+  description = "Email address for CloudWatch alarm notifications (leave empty to skip)"
+  type        = string
+  default     = ""
+}

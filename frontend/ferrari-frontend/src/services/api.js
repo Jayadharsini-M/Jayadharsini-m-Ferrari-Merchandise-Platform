@@ -47,3 +47,7 @@ export const getOrder = (orderId, userId) =>
 // ─── PAYMENT ──────────────────────────────────────────
 export const processPayment = (body) =>
   api.post("/payment", body);
+
+// ─── FLASH SALE / DROPS ───────────────────────────────
+export const getFlashSaleProducts = () => api.get("/products/drops");
+export const configureFlashSale   = (id, body) => api.put(`/products/${id}/flash`, body);

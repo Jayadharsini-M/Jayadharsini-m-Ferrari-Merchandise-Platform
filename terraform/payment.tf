@@ -65,3 +65,4 @@ resource "aws_apigatewayv2_route" "get_payment_health" {
   route_key = "GET /${var.api_version}/payment"
   target    = "integrations/${aws_apigatewayv2_integration.payment_service.id}"
 }
+
