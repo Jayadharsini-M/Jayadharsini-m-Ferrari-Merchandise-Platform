@@ -28,7 +28,7 @@
 
 ## 🌐 Live Demo
 
-**🔗 URL:** [https://devia4y9vql1s.cloudfront.net/](https://devia4y9vql1s.cloudfront.net/)
+**🔗 URL:** https://devia4y9vql1s.cloudfront.net/login
 
 Experience the Ferrari merchandise store — blazing fast, elegantly designed, and globally delivered via **AWS CloudFront CDN**.
 
