@@ -48,6 +48,15 @@ The platform supports:
 
 All infrastructure is managed via **Terraform (Infrastructure as Code)**, with the frontend served globally through **AWS CloudFront + S3**.
 
+
+Demo Login Credentials
+
+| Account Type     | Username | Password   |
+| ---------------- | -------- | ---------- |
+| 👤 User Account  | `user`   | `user123`  |
+| 🔑 Admin Account | `admin`  | `admin123` |
+
+
 ---
 
 ## 🏗️ System Architecture
