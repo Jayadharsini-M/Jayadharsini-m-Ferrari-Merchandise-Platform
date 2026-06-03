@@ -247,11 +247,11 @@ resource "aws_cloudwatch_dashboard" "ferrari" {
     widgets = [
 
       {
-        type   = "text"
-        x      = 0
-        y      = 0
-        width  = 24
-        height = 1
+        type       = "text"
+        x          = 0
+        y          = 0
+        width      = 24
+        height     = 1
         properties = { markdown = "## 🏎️ Lambda Functions" }
       },
 
@@ -344,11 +344,11 @@ resource "aws_cloudwatch_dashboard" "ferrari" {
       },
 
       {
-        type   = "text"
-        x      = 0
-        y      = 13
-        width  = 24
-        height = 1
+        type       = "text"
+        x          = 0
+        y          = 13
+        width      = 24
+        height     = 1
         properties = { markdown = "## 🌐 API Gateway" }
       },
 
@@ -417,11 +417,11 @@ resource "aws_cloudwatch_dashboard" "ferrari" {
       },
 
       {
-        type   = "text"
-        x      = 0
-        y      = 20
-        width  = 24
-        height = 1
+        type       = "text"
+        x          = 0
+        y          = 20
+        width      = 24
+        height     = 1
         properties = { markdown = "## 🗄️ DynamoDB" }
       },
 
@@ -478,20 +478,20 @@ resource "aws_cloudwatch_dashboard" "ferrari" {
           period = 60
           stat   = "Sum"
           metrics = [
-            ["AWS/DynamoDB", "ReadThrottleEvents",  "TableName", aws_dynamodb_table.products.name],
+            ["AWS/DynamoDB", "ReadThrottleEvents", "TableName", aws_dynamodb_table.products.name],
             ["AWS/DynamoDB", "WriteThrottleEvents", "TableName", aws_dynamodb_table.products.name],
-            ["AWS/DynamoDB", "ReadThrottleEvents",  "TableName", aws_dynamodb_table.orders.name],
+            ["AWS/DynamoDB", "ReadThrottleEvents", "TableName", aws_dynamodb_table.orders.name],
             ["AWS/DynamoDB", "WriteThrottleEvents", "TableName", aws_dynamodb_table.orders.name],
           ]
         }
       },
 
       {
-        type   = "text"
-        x      = 0
-        y      = 27
-        width  = 24
-        height = 1
+        type       = "text"
+        x          = 0
+        y          = 27
+        width      = 24
+        height     = 1
         properties = { markdown = "## ☁️ CloudFront" }
       },
 
